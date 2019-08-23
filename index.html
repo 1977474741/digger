@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title></title>
+	<meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <!-- <script type="text/javascript" src="./js/flexible.debug.js"></script> -->
+    <script type="text/javascript" src="./js/pixi.js?v=0"></script>
+	<script type="text/javascript" src="./js/pixi-viewport.js?v=0"></script>
+    <script type="text/javascript" src="./js/poly-decomp.js"></script>
+    <script type="text/javascript" src="./js/matter.js?v=0"></script>
+    <script type="text/javascript" src="./js/playground-base.js"></script>
+    <!-- <script src="https://cdn.bootcss.com/socket.io/2.1.1/socket.io.js"></script> -->
+    <!-- <link rel="stylesheet" type="text/css" href="../weixin_html/expression/icon.css"> -->
+	<style type="text/css">
+		canvas{
+			background: black;
+            display: block;
+		}
+        #phaser-example{
+        }
+        *{
+            -webkit-tap-highlight-color: rgba(0,0,0,0);
+            padding: 0;
+            margin: 0;
+            box-sizing: content-box;
+        }
+        html{
+            width: 100%;
+            height: 100%;
+            background: white;
+            overflow: hidden;
+        }
+        body{
+            overflow: hidden;
+            margin: 0;
+            width: 100vh;
+            height: 100vw;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform:translate(-50%,-50%) rotate(90deg);
+            background: #484848!important;
+        }
+        .but{
+            top: 70%;
+            position: absolute;
+            z-index: 9;
+            height: 30vw;
+        }
+        .but:nth-of-type(1){
+            left: 0;
+        }
+        .but:nth-of-type(2){
+            right: 0%;
+            height: 50vw;
+        }
+        input[type="range"] {
+            background: #caaf972e;
+            -webkit-appearance: none;
+            height: 3vh;
+            width: 20vh;
+            border-radius: 3vh;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            cursor: default;
+            height: 8vh;
+            width: 8vh;
+            background: #ffffff;
+            /* box-shadow: inset 0px 2px 15px 11px #4c4c4c; */
+            border: transparent;
+            /* background: green; */
+            border-radius: 10vh;
+        }
+        #range_run{
+            width: 60vw;
+        }
+        #range_armbig{
+            left: 27%;
+            position: relative;
+        }
+        #range_armbig,#range_armsmall{
+            transform: rotateZ(-90deg);
+        }
+        #range_armbig::-webkit-slider-thumb {
+            background:white url('./images/arm.png') no-repeat 100% center / 150% auto;
+            transform: rotate(-45deg)
+        }
+        #range_armsmall::-webkit-slider-thumb {
+            background:white url('./images/chan.png') no-repeat center center / 80% auto;
+            transform: rotate(90deg)
+        }
+	</style>
+</head>
+<body>
+	<canvas id="phaser-example"></canvas>
+    <div class="but">
+        <input type="range" class="range" id="range_run" min="-3" step="0.1" max="8" name="" value="0">
+    </div>
+    <div class="but">
+        <input type="range" class="range" id="range_armbig" min="-5" step="0.1" max="5" name="" value="0">
+        <input type="range" class="range" id="range_armsmall" min="-5" step="0.1" max="5" name="" value="0">
+    </div>
+</body>
+<script type="text/javascript">
+document.querySelector("body").addEventListener("touchend", (e)=>{
+    if(e.target.className=='range'){
+        e.target.value = 0;
+    };
+}, false)
+setInterval(()=>{
+    range_run.value*1&&app.socket.send({
+        type:"forward",
+        speed:range_run.value/10
+    });
+    range_armbig.value*1&&app.socket.send({
+        type:range_armbig.value>0?'armTop':'armBottom',
+        speed:Math.abs(range_armbig.value)
+    });
+    range_armsmall.value*1&&app.socket.send({
+        type:range_armsmall.value>0?'shovelTop':'shovelBottom',
+        speed:Math.abs(range_armsmall.value)
+    });
+},1000/30);
+var style = new PIXI.TextStyle({
+    fontFamily: 'Arial',  //字体
+    fontSize: 49,         //字体大小
+    fontStyle: 'italic',  //字体类型（斜体）
+    fontWeight: 'bold',   //加粗
+    fill: ['#ffffff', '#00ff99'], //由上到下的过渡颜色
+    stroke: '#4a1850',    //文字边框颜色
+    strokeThickness: 5,   //文字边框粗细
+    dropShadow: true,     //阴影
+    dropShadowColor: '#000000', //阴影颜色
+    dropShadowBlur: 4,          //阴影模糊程度
+    dropShadowAngle: Math.PI / 6, //阴影角度
+    dropShadowDistance: 6,  //阴影距离
+    wordWrap: true,        //自动换行
+    wordWrapWidth: 440
+});
+var app = playground({
+    smoothing: false,     /* antialiasing */
+
+    /* silently preload assets before main loader */
+
+    preload: function() {
+        //资源加载器
+        this.width=document.body.clientWidth,
+        this.height=document.body.clientHeight,
+        this.last_view_position={},//上次相机的坐标
+        this.worldWidth=2000,
+        this.worldHeight=this.height,
+        this.PIXIloader=PIXI.loader,
+        this.TextureCache=PIXI.utils.TextureCache,
+        //初始化matter引擎
+        this.engine = Matter.Engine.create(),
+        Matter.Engine.run(this.engine);
+        this.Bodies = Matter.Bodies,
+        this.space={};//物体数组
+        // 初始化matter渲染器
+        this.render_matter = Matter.Render.create({
+            // element: document.body,
+            engine: this.engine,
+            options: {
+                width:this.width,
+                height:this.worldHeight,
+                wireframes: true,
+                showPositions: true,// 刚体位置
+                showAngleIndicator: true,// 刚体转角指示
+                hasBounds:true
+            }
+        });
+        // Matter.Render.run(this.render_matter);
+        // 初始化pixi渲染器
+        this.render_pixi = new PIXI.Application(this.width, this.height/2, {
+            engine: this.engine,
+            view:document.getElementById("phaser-example"),
+            wireframes: true,
+            // backgroundColor: 0x1099bb,   
+            transparent: false, //背景是否设为透明   
+            DisplayObject:true,
+            antialias:true,
+            forceFXAA:true
+        });
+        this.viewport = new PIXI.extras.Viewport({
+            screenWidth: this.width,
+            screenHeight: this.worldHeight,
+            worldWidth: this.worldWidth,
+            worldHeight: this.worldHeight,
+            interaction:this.render_pixi.renderer.interaction,
+        });
+        this.viewport.clamp({
+            direction:'all'
+        });
+        this.render_pixi.stage.addChild(this.viewport);
+        //预加载资源
+        this.PIXIloader.reset();
+        this.PIXIloader.add(["images/car1.png","images/wheel.png","images/egg.png","images/chan.png","images/arm.png","images/bg.jpg"]).load(this.loaded);
+    },
+
+    /* assets from preloader available, push some more for main loader */
+    loaded:function(){
+        let that=app;
+        console.log("%c资源加载完成",'background:rgba(0,0,0,.7);color:#67BE9B;padding:5px;font-weight:400;');
+        //背景图
+        let bg = that.TextureCache["images/bg.jpg"];
+        let sprite = new PIXI.Sprite(bg);
+        sprite.width=that.worldWidth;
+        sprite.height=that.worldHeight;
+        that.viewport.addChild(sprite);
+        //四面墙
+        // alert(that.width);
+        // alert(that.height);
+        let height = document.body.clientHeight;
+        let width = document.body.clientWidth;
+        that.space.wall_top=that.object.RectObject.call(that,0, 0, that.worldWidth, 5, { physics:true,isStatic: true,bgColor:0x510889 });
+        that.space.wall_left=that.object.createRect.call(that,0, 0, 5, height/2, { physics:true,isStatic: true,bgColor:0x510889 });
+        that.space.wall_right=that.object.createRect.call(that,that.worldWidth-5, 0, 5, height/2, { physics:true,isStatic: true,bgColor:0x510889 });
+        that.space.wall_bottom=that.object.createRect.call(that,0, height/2, that.worldWidth, 5, { physics:true,isStatic: true,bgColor:0x510889,friction:1000,density:1 });
+        //集装箱挡板
+        that.space.box_left=that.object.createRect.call(that,that.worldWidth-100, height/2-height/6, 20, height/6, { physics:true,isStatic: true,bgColor:0x510889 });
+        //创建小方块
+        for(let i=10;i<25;i++){
+            that.space[`cubo${i}`]=that.object.MatterSprite("Rect",that.object.PhysicsRect.call(that,510+(i-10)*50, 120, 15,15,{
+                density:0.02,
+                friction:1000,
+                bgColor:0xff5722,
+            }));
+        }
+        //创建跷跷板
+        that.space.cubo2=that.object.MatterSprite("Rect",that.object.PhysicsRect.call(that,that.worldWidth*0.2, 50, height*0.5,5,{
+            density:0.05,
+            friction:1000,
+            bgColor:0x510889,
+        }));
+        Matter.World.add(app.engine.world, [
+            Matter.Constraint.create({
+                pointA: { x: that.worldWidth*0.3 , y: width*0.22 },
+                bodyB: that.space.cubo2.body,
+                length: 0
+            })
+        ]);
+        let car1=that.TextureCache["images/car1.png"];
+        let wheel=that.TextureCache["images/wheel.png"];
+        let egg=that.TextureCache["images/egg.png"];
+        let chan=that.TextureCache["images/chan.png"];
+        let arm=that.TextureCache["images/arm.png"];
+        //创建一个车组，为了让组内刚体不发生碰撞
+        var group = Matter.Body.nextGroup(true);
+        //创建车身
+        that.space.cubo=that.object.MatterSprite(car1,{
+            parts:[
+                that.object._PhysicsRect.call(that,157, 108, 3, 15,{
+                    angle: 0,
+                    density:0.05,
+                }),//上右
+                that.object._PhysicsRect.call(that,107, 103, 3, 20,{
+                    angle: 0,
+                    density:0.05,
+                }),//上左
+                that.object._PhysicsRect.call(that,110, 115, 46, 10,{
+                    angle: 0,
+                    density:0.05,
+
+                }),//上
+                that.object._PhysicsRect.call(that,75, 125, 115, 30,{
+                    angle: 0,
+                    density:0.1,
+                    chamfer:{
+                        radius:[27,15,3,5]
+                    },
+                }),//下
+            ],
+            name:'car',
+            isStatic: false,
+            bgColor:0x510889,
+            width:115,
+            height:50,
+            collisionFilter: { group: group },
+            // frictionStatic:1,
+            // _angle: 0.03,
+        });
+        //鸡蛋
+        setTimeout(()=>{
+            that.space.egg=that.object.MatterSprite(egg,that.object.PhysicsRect.call(that,125,50,25,35,{
+                // friction:10,
+                density:0.05,
+                isStatic: false,
+                // frictionStatic:1,
+                chamfer:{
+                    radius:[18,18,13,13]
+                },
+                bgColor:0x510889,
+            }));
+        },1500);
+        //创建轮子
+        that.space.wheel1=that.object.MatterSprite(wheel,that.object.PhysicsCircle.call(that,95,95,12,{
+            collisionFilter: { group: group },
+            friction:1000,//摩擦系数
+            density:0.2,//平均密度
+            isStatic: false,
+            restitution:0,//弹性
+            xs:0.2,//加速度
+            // frictionStatic:1,
+            name:'wheel1'
+        }));
+        that.space.wheel2=that.object.MatterSprite(wheel,that.object.PhysicsCircle.call(that,160,95,12,{
+            name:'wheel2',
+            collisionFilter: { group: group },
+            friction:1000,//摩擦系数
+            density:0.2,//平均密度
+            isStatic: false,
+            restitution:0,//弹性
+            xs:0.2,//加速度
+            // frictionStatic:1,
+        }));
+        //创建轮子约束
+        var constraint1 = Matter.Constraint.create({
+            bodyA: that.space.wheel1.body,
+            pointB: { x: -29, y: 20 },
+            bodyB: that.space.cubo.body,
+            length:0,//长度
+            stiffness:.1,//刚度
+            damping: 1,//阻尼
+            // inertia: 1,
+        });
+        var constraint2 = Matter.Constraint.create({
+            bodyA: that.space.wheel2.body,
+            pointB: { x: 29, y: 20 },
+            bodyB: that.space.cubo.body,
+            length:0,//长度
+            stiffness:.1,//刚度
+            damping: 1,//阻尼
+            // inertia: 1,
+        });
+
+        //创建小臂
+        that.space.arm=that.object.MatterSprite(arm,that.object.PhysicsRect.call(that,195, 125, 55, 3,{
+            collisionFilter: { group: group },
+            physics:true,
+            density:0.1,
+            width:55,
+            height:3
+        }));
+        //锁定角度
+        Matter.Body.setInertia(that.space.arm.body, Infinity)
+        setTimeout(()=>{
+            Matter.Body.rotate(that.space.arm.body, Math.PI/180*45);
+            Matter.Body.rotate(that.space.shovel.body, -Math.PI/180*8.5);
+        })
+        //创建小臂和车身的约束
+        var constraint_arm = Matter.Constraint.create({
+            bodyA: that.space.arm.body,
+            pointB: { x: 55, y: -10 },
+            bodyB: that.space.cubo.body,
+            length:0,//长度
+            stiffness:1,//刚度
+        });
+        //创建铲子
+        that.space.shovel=that.object.MatterSprite(chan,{//----------------------------------------------放车外面加约束吧
+            parts:[
+                that.Bodies.rectangle(213, 142, 27, 3,{
+                    angle:Math.PI/180*120,
+                    density:0.15,
+                    friction:1000,//摩擦系数
+                }),
+                that.Bodies.rectangle(213, 160, 15, 3,{
+                    angle:Math.PI/180*40,
+                    density:0.15,
+                    friction:1000,//摩擦系数
+                }),
+                that.Bodies.rectangle(245, 170, 55, 2,{
+                    angle:Math.PI/180*10,
+                    density:0.15,
+                    friction:1000,//摩擦系数
+                }),
+            ],
+            width:70,
+            height:45,
+            collisionFilter: { group: group },
+            // isStatic:true,
+        });
+        Matter.Body.setInertia(that.space.shovel.body, Infinity)
+        //创建铲子和小臂的约束
+        var constraint_shovel = Matter.Constraint.create({
+            bodyA: that.space.shovel.body,
+            pointB: { x: 45, y: -5 },
+            bodyB: that.space.arm.body,
+            length:0.000001,//长度
+            stiffness:1,//刚度
+        });
+        //放进物理世界里
+        Matter.World.add(app.engine.world, [
+            that.space.cubo.body,//组合刚体
+            that.space.shovel.body,//组合刚体
+            constraint1,
+            constraint2,
+            constraint_arm,
+            constraint_shovel
+        ]);
+        // 初始化鼠标拖拽刚体事件
+        that.bodyReady();
+        that.viewport.follow(that.space.cubo);
+    },
+    //刚体都加载完毕
+    bodyReady:function(){
+        // 添加鼠标控件
+        // var mouse = Matter.Mouse.create(this.render_matter.canvas||this.render_pixi.renderer.view);
+        // // this.mouse=mouse;
+        // // this.mouse_posi={
+        // //     x:mouse.position.x+this.last_view_position.x,
+        // //     y:mouse.position.y+this.last_view_position.y
+        // // }
+        // // console.log(mouse);
+        // mouseConstraint = Matter.MouseConstraint.create(this.engine, {
+        //     mouse: mouse,
+        //     // pointA: this.mouse_posi,
+        //     constraint: {
+        //         // stiffness: 0.2,
+        //         angularStiffness:0,
+        //         render: {
+        //             visible: true
+        //         }
+        //     }
+        // });
+        //添加鼠标拖动刚体事件
+        // Matter.World.add(this.engine.world, mouseConstraint);
+    },
+    create: function() {
+        
+    },
+    /* called when main loader has finished  - you want to setState here */
+
+    ready: function() {
+        //初始化socket
+       this.webSocket.init.call(this);
+    },
+
+    /* called after container/window has been resized */
+
+    resize: function() { 
+
+    },
+    object:{
+        MatterSprite:function(texture,body){
+            let sprite={};//精灵
+            let body_;//临时刚体
+            //创建刚体
+            body_=body;
+            switch (body.label) {
+                case "Circle Body":
+                    //圆形
+                    break;
+                case "Rectangle Body":
+                    //矩形
+                    break;
+                case undefined:
+                    //刚体组合
+                    body_ = Matter.Body.create(body);
+                    if(body.x){
+                        body_.position.x=body.x;
+                    }else if(body.y){
+                        body_.position.y=body.y;
+                    }
+                    break;
+                default:
+                    break;
+            }
+            //创建精灵或图形
+            let core="pivot";//pixi的旋转中心----graphics对象>pivot||sprite对象>anchor
+            switch (texture) {
+                case "Circle":
+                    //圆形
+                    sprite.radius=body_.radius?body_.radius:(body_.circleRadius?body_.circleRadius:(body_.bounds.max.y-body_.bounds.min.y)/2);
+                    sprite=app.object.Circleobject.call(app,sprite.x,sprite.y,sprite.radius,body);
+                    break;
+                case "Rect":
+                    //矩形
+                    sprite.width=body_.width?body_.width:body_.bounds.max.x-body_.bounds.min.x;
+                    sprite.height=body_.height?body_.height:body_.bounds.max.y-body_.bounds.min.y;
+                    sprite=app.object.RectObject.call(app,sprite.x,sprite.y,sprite.width,sprite.height,body);
+                    break;
+                default:
+                    //是精灵
+                    sprite=new PIXI.Sprite(texture);
+                    sprite.width=body_.width?body_.width:body_.bounds.max.x-body_.bounds.min.x;
+                    sprite.height=body_.height?body_.height:body_.bounds.max.y-body_.bounds.min.y;
+                    core="anchor";
+                    break;
+            }
+            sprite[core].set(0.5);
+            sprite[core].x=(body_.position.x-body_.bounds.min.x)/(body_.bounds.max.x-body_.bounds.min.x);
+            sprite[core].y=(body_.position.y-body_.bounds.min.y)/(body_.bounds.max.y-body_.bounds.min.y);
+            app.viewport.addChild(sprite);
+            sprite.body=body_;
+
+            //初始化位置及角度
+            sprite.x=body_.position.x;
+            sprite.y=body_.position.y;
+            if(body._angle){
+                body_.angle=body._angle*(Math.PI/180);
+                sprite.rotation=body_.angle;
+            }
+            return sprite;
+        },
+        createRect:function(x,y,w,h,option) {
+            let body=option.physics?this.object.PhysicsRect.call(this,x,y,w,h,option):undefined;
+            let surface=this.object.RectObject.call(this,x,y,w,h,option);
+            surface.body=body;
+            return surface;
+        },
+        PhysicsRect:function(x,y,w,h,option){
+            //matter矩形
+            let chamfer;
+            if(option.chamfer&&option.chamfer.radius){
+                chamfer={
+                    radius:option.chamfer.radius
+                };
+            };
+            let rect=this.Bodies.rectangle(x+w/2, y+h/2, w, h, option);
+            if(chamfer){
+                rect.chamfer=chamfer;
+            };
+            // 加入到场景
+            Matter.World.add(this.engine.world, rect);
+            return rect;
+        },
+        _PhysicsRect:function(x,y,w,h,option){
+            //matter矩形不放进world里
+            let rect=this.Bodies.rectangle(x+w/2, y+h/2, w, h, option);
+            if(option.chamfer&&option.chamfer.radius){
+                rect.chamfer={
+                    radius:option.chamfer.radius
+                };
+            };
+            return rect;
+        },
+        PhysicsTrapezoid:function(x,y,w,h,slope,option){
+            //matter梯形
+            let trapezoid=this.Bodies.trapezoid(x+w/2, y+h/2, w, h,slope,option);
+            return trapezoid;
+        },
+        PhysicsCircle:function(x,y,radius,option,maxSides){
+            //matter圆形
+            let circle=this.Bodies.circle(x+radius/2, y+radius/2, radius, option,maxSides);// 加入到场景
+            Matter.World.add(this.engine.world, circle);
+            return circle;
+        },
+        RectObject:function(x,y,w,h,option){
+            //pixi矩形
+            var graphics = new PIXI.Graphics();
+            if(option&&option.bgColor){
+                graphics.beginFill(option.bgColor,option.bgAlpha||1);
+            }
+            if(option&&option.borWidth){
+                graphics.lineStyle(option.borWidth, option.borColor||0xFFFFFF, option.borAlpha||1,0);//6.绘制线段
+            }
+            //2.绘制长方体（x,y,w,h）
+            if(option.chamfer&&option.chamfer.radius){
+                graphics.drawRoundedRect(-w/2, -h/2, w, h,option.chamfer.radius[1]);
+            }else{
+                graphics.drawRect(-w/2, -h/2, w, h);
+            }
+            //加入到场景
+            this.viewport.addChild(graphics);
+            // this.render_pixi.stage.addChild(graphics);
+            graphics.position.x=x+w/2;
+            graphics.position.y=y+h/2;
+            return graphics;
+        },
+        Circleobject:function(x,y,radius,option){
+            //pixi圆形
+            var graphics = new PIXI.Graphics();
+            if(option&&option.bgColor){
+                graphics.beginFill(option.bgColor,option.bgAlpha||1);
+            }
+            if(option&&option.borWidth){
+                graphics.lineStyle(option.borWidth, option.borColor||0xFFFFFF, option.borAlpha||1,0);//6.绘制线段
+            }
+            graphics.drawCircle(0, 0, radius);
+            //加入到场景
+            this.viewport.addChild(graphics);
+            graphics.position.x=x+radius;
+            graphics.position.y=y+radius;
+            return graphics;
+        },
+    },
+    /* called each frame to update logic */
+
+    step: function(dt) { },
+
+    /* called each frame to update rendering */
+
+    render: function(dt) {
+        if(this.viewport.dirty){
+            //viewport镜头变化的时候
+            let changeX=this.last_view_position.x-this.viewport.position.x;
+            let changeY=this.last_view_position.y-this.viewport.position.y;
+            if(changeX||changeY){
+                Matter.Bounds.translate(this.render_matter.bounds, {
+                    x:changeX,
+                    y:changeY,
+                });
+            }
+            this.last_view_position.x=this.viewport.position.x;
+            this.last_view_position.y=this.viewport.position.y;
+            this.viewport.dirty=false;
+            // if(this.mouse_posi){
+            //     this.mouse_posi.x=this.mouse.position.x+this.last_view_position.x,
+            //     this.mouse_posi.y=this.mouse.position.y+this.last_view_position.y;
+            // }
+        }
+        if(!this.space.cubo)return;
+        let keys=this.keyboard.keys,
+            cubo=this.space.cubo.body,
+            arm=this.space.arm.body,
+            shovel=this.space.shovel.body;
+        //记录车身上次的角度，相应的改变小臂的角度
+        if (cubo.angle_last) {
+            Matter.Body.rotate(arm, cubo.angle-cubo.angle_last);
+            Matter.Body.rotate(shovel, cubo.angle-cubo.angle_last);
+        }
+        cubo.angle_last=cubo.angle;
+        //按键操作------------------------------------------------------------------------------
+        if(keys['d']){
+            //前进
+            // this.actions.forward.call(this);
+            this.socket.send({
+                type:"forward"
+            });
+        }else if(keys['a']){
+            //后退
+            // this.actions.back.call(this);
+            this.socket.send({
+                type:"back"
+            });
+        }else{
+            //松开后初始化速度
+            // this.actions.loosen.call(this);
+            // this.socket.send({
+            //     type:"loosen"
+            // });
+        }
+        if(keys['w']){
+            //小臂向上旋转
+            // this.actions.armTop.call(this);
+            this.socket.send({
+                type:"armTop"
+            });
+        }
+        if(keys['s']){
+            //小臂向下旋转
+            // this.actions.armBottom.call(this);
+            this.socket.send({
+                type:"armBottom"
+            });
+        }
+        if(keys['e']){
+            //铲子向上旋转
+            // this.actions.shovelTop.call(this);
+            this.socket.send({
+                type:"shovelTop"
+            });
+        }
+        if(keys['q']){
+            //铲子向下旋转
+            // this.actions.shovelBottom.call(this);
+            this.socket.send({
+                type:"shovelBottom"
+            });
+        }
+        //贴图同步matter的坐标
+        for (var key in this.space) {
+          let display = this.space[key];
+          let body = this.space[key].body;
+          if(body){
+            display.position = body.position;
+            display.rotation = body.angle;
+          }
+        }
+    },
+    webSocket:{
+        init(){
+            setTimeout(()=>{
+                let cubo=this.space.cubo.body;
+                console.log(cubo);
+            },2000)
+            // this.socket = io.connect('');
+            // this.socket.on('connect', ()=>{
+            //     this.socket.send("连接成功");
+            // });
+            let messageCallback = (data)=>{
+                if(data.type){
+                    this.actions[data.type].call(this,data.speed);
+                }
+            }
+            // this.socket.on('message', messageCallback);
+            // this.socket.on('disconnect',()=>{
+            //     console.log('断开连接');
+            // });
+            // let send = this.socket.send;
+            this.socket = {
+                send:(data)=>{
+                    messageCallback(data);
+                    // send(data);
+                }
+            }
+        },
+
+    },
+    actions:{
+        //小车的全部动作
+        forward(speed=0.01){
+            let wheel1=this.space.wheel1.body,
+                wheel2=this.space.wheel2.body;
+            // if(wheel1.xs<0.7){
+            //     wheel1.xs+=speed;
+            //     wheel2.xs+=speed;
+            // }
+            Matter.Body.setAngularVelocity(wheel1, speed);
+            Matter.Body.setAngularVelocity(wheel2, speed);
+        },
+        back(speed=-0.4){
+            let wheel1=this.space.wheel1.body,
+                wheel2=this.space.wheel2.body;
+            Matter.Body.setAngularVelocity(wheel1, speed);
+            Matter.Body.setAngularVelocity(wheel2, speed);
+        },
+        loosen(){
+            //松开后的速度
+            let wheel1=this.space.wheel1.body,
+                wheel2=this.space.wheel2.body;
+            wheel1.xs=0.01;
+            wheel2.xs=0.01;
+        },
+        armTop(speed=1.5){
+            let cubo=this.space.cubo.body,
+                arm=this.space.arm.body,
+                shovel=this.space.shovel.body;
+            Matter.Body.rotate(arm, -Math.PI/180*speed);
+            Matter.Body.rotate(shovel, -Math.PI/180*(speed*0.6666));
+            if((arm.angle-cubo.angle)*180/Math.PI<-100){
+                Matter.Body.rotate(arm, Math.PI/180*speed);
+            }
+            if((shovel.angle-arm.angle)*180/Math.PI<-30){
+                Matter.Body.rotate(shovel, Math.PI/180*(speed*0.6666));
+            }
+        },
+        armBottom(speed=1.5){
+            let cubo=this.space.cubo.body,
+                arm=this.space.arm.body,
+                shovel=this.space.shovel.body;
+            Matter.Body.rotate(arm, Math.PI/180*speed);
+            Matter.Body.rotate(shovel, Math.PI/180*(speed));
+            if((arm.angle-cubo.angle)*180/Math.PI>40){
+                Matter.Body.rotate(arm, -Math.PI/180*speed);
+            }
+            if((shovel.angle-arm.angle)*180/Math.PI+48>0){
+                if(speed<(shovel.angle-arm.angle)*180/Math.PI+48){
+                    Matter.Body.rotate(shovel, -Math.PI/180*speed);
+                }
+            }
+        },
+        shovelBottom(speed=1){
+            let arm=this.space.arm.body,
+                shovel=this.space.shovel.body;
+            Matter.Body.rotate(shovel, Math.PI/180*speed);
+            if((shovel.angle-arm.angle)*180/Math.PI>90){
+                Matter.Body.rotate(shovel, -Math.PI/180*speed);
+            }
+        },
+        shovelTop(speed=1){
+            let arm=this.space.arm.body,
+                shovel=this.space.shovel.body;
+            Matter.Body.rotate(shovel, -Math.PI/180*speed);
+            if((shovel.angle-arm.angle)*180/Math.PI<-95){
+                Matter.Body.rotate(shovel, Math.PI/180*speed);
+            }
+        },
+    },
+    /* states related events (called only for application */
+
+    createstate: function() { },
+    enterstate: function() { },
+    leavestate: function() { },
+
+    /* keyboard events */
+
+    keydown: function(data) {
+        
+    },
+    keyup: function(data) {
+        
+    },
+
+    /* pointer events (mouse + touch) */
+
+    pointerdown: function(data) {
+        // if(data.x<document.body.offsetWidth/2){
+        //     this.space.wheel1.body.left_down=true;
+        //     this.space.wheel2.body.left_down=true;
+        // }else{
+        //     this.space.wheel1.body.right_down=true;
+        //     this.space.wheel2.body.right_down=true;
+        // }
+    },
+    pointerup: function(data) {
+        //松开鼠标
+        // this.space.wheel1.body.xs=0.01;
+        // Matter.Body.setAngularVelocity(this.space.wheel1.body, 0);
+        // this.space.wheel1.body.left_down=false;
+        // this.space.wheel2.body.left_down=false;
+        // this.space.wheel1.body.right_down=false;
+        // this.space.wheel2.body.right_down=false;
+    },
+    pointermove: function(data) { },
+    pointerwheel: function(data) { },
+
+    /* mouse trap */
+
+    mousedown: function(data) {
+        
+    },
+    mouseup: function(data) {
+        
+    },
+    mousemove: function(data) { },
+
+    /* finger trap */
+
+    touchstart: function(data) {
+
+    },
+    touchend: function(data) { },
+    touchmove: function(data) { },
+
+    /* gamepad events */
+
+    gamepaddown: function(data) { },
+    gamepadup: function(data) { },
+    gamepadmove: function(data) { }
+
+});
+
+
+
+
+</script>
+</html>

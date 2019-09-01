@@ -3,9 +3,9 @@
 <head>
 	<title></title>
 	<meta charset="utf-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
-    <!-- <script type="text/javascript" src="./js/flexible.debug.js"></script> -->
-    <script src="https://cdn.bootcss.com/pixi.js/4.8.0/pixi.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no,viewport-fit=cover">
+    <script type="text/javascript" src="./js/flexible.js"></script>
+    <script type="text/javascript" src="./js/pixi.js?v=0"></script>
 	<script type="text/javascript" src="./js/pixi-viewport.js?v=0"></script>
     <script type="text/javascript" src="./js/poly-decomp.js"></script>
     <script type="text/javascript" src="./js/matter.js?v=0"></script>
@@ -29,13 +29,13 @@
             width: 100%;
             height: 100%;
             background: white;
-            overflow: hidden;
+            overflow: hidden!important;
         }
         body{
-            overflow: hidden;
+            overflow: hidden!important;
             margin: 0;
-            width: 100vh;
-            height: 100vw;
+            /*width: 100vh;*/
+            height: 10rem;
             position: absolute;
             top: 50%;
             left: 50%;
@@ -97,7 +97,7 @@
 <body>
 	<canvas id="phaser-example"></canvas>
     <div class="but">
-        <input type="range" class="range" id="range_run" min="-3" step="0.1" max="8" name="" value="0">
+        <input type="range" class="range" id="range_run" min="-5" step="0.1" max="8" name="" value="0">
     </div>
     <div class="but">
         <input type="range" class="range" id="range_armbig" min="-5" step="0.1" max="5" name="" value="0">
@@ -105,6 +105,8 @@
     </div>
 </body>
 <script type="text/javascript">
+let innerHeight = window.innerHeight;
+document.querySelector("body").style.width = innerHeight+"px";
 document.querySelector("body").addEventListener("touchend", (e)=>{
     if(e.target.className=='range'){
         e.target.value = 0;
@@ -147,7 +149,7 @@ var app = playground({
 
     preload: function() {
         //资源加载器
-        this.width=document.body.clientWidth,
+        this.width=innerHeight,
         this.height=document.body.clientHeight,
         this.last_view_position={},//上次相机的坐标
         this.worldWidth=2000,
@@ -211,33 +213,31 @@ var app = playground({
         sprite.height=that.worldHeight;
         that.viewport.addChild(sprite);
         //四面墙
-        // alert(that.width);
-        // alert(that.height);
         let height = document.body.clientHeight;
         let width = document.body.clientWidth;
         that.space.wall_top=that.object.RectObject.call(that,0, 0, that.worldWidth, 5, { physics:true,isStatic: true,bgColor:0x510889 });
         that.space.wall_left=that.object.createRect.call(that,0, 0, 5, height/2, { physics:true,isStatic: true,bgColor:0x510889 });
         that.space.wall_right=that.object.createRect.call(that,that.worldWidth-5, 0, 5, height/2, { physics:true,isStatic: true,bgColor:0x510889 });
-        that.space.wall_bottom=that.object.createRect.call(that,0, height/2, that.worldWidth, 5, { physics:true,isStatic: true,bgColor:0x510889,friction:1000,density:1 });
+        that.space.wall_bottom=that.object.createRect.call(that,0, height/2, that.worldWidth, 20, { physics:true,isStatic: true,bgColor:0x510889,friction:1000,density:1 });
         //集装箱挡板
         that.space.box_left=that.object.createRect.call(that,that.worldWidth-100, height/2-height/6, 20, height/6, { physics:true,isStatic: true,bgColor:0x510889 });
         //创建小方块
         for(let i=10;i<25;i++){
-            that.space[`cubo${i}`]=that.object.MatterSprite("Rect",that.object.PhysicsRect.call(that,510+(i-10)*50, 120, 15,15,{
+            that.space[`cubo${i}`]=that.object.MatterSprite("Rect",that.object.PhysicsRect.call(that,360+(i-10)*50, 120, 15,15,{
                 density:0.02,
                 friction:1000,
                 bgColor:0xff5722,
             }));
         }
         //创建跷跷板
-        that.space.cubo2=that.object.MatterSprite("Rect",that.object.PhysicsRect.call(that,that.worldWidth*0.2, 50, height*0.5,5,{
-            density:0.05,
+        that.space.cubo2=that.object.MatterSprite("Rect",that.object.PhysicsRect.call(that,that.worldWidth*0.2, 50, height*0.5,13,{
+            density:0.15,
             friction:1000,
             bgColor:0x510889,
         }));
         Matter.World.add(app.engine.world, [
             Matter.Constraint.create({
-                pointA: { x: that.worldWidth*0.3 , y: width*0.22 },
+                pointA: { x: that.worldWidth*0.3 , y: width*0.26 },
                 bodyB: that.space.cubo2.body,
                 length: 0
             })
